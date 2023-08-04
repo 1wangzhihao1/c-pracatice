@@ -12,11 +12,13 @@
 #include<vector>
 #include<conio.h>
 
-using namespace std;
-
+ using namespace std;
 
 constexpr auto swidth=600;
 constexpr auto sheight=1100;
+//constexpr unsigned int CHP = 10;//生命值常量
+
+constexpr auto hurttime = 1000;//为了计算受伤次数的冷却时间，单位为ms
 
 //判断鼠标按下区域函数
 bool PointInRect(int x, int y, RECT& r)
@@ -140,7 +142,7 @@ class Hero//战机
 {
 public:
 	Hero(IMAGE& img)
-		:img(img)
+		:img(img)/*,HP(CHP)*/
 	{
 		rect.left = swidth / 2 - img.getwidth() / 2;
 		rect.top = sheight - img.getheight();
@@ -162,11 +164,20 @@ public:
 			rect.bottom = rect.top+img.getheight();
 		}
 	}
+
+	/*bool hurt()
+	{
+		HP--;
+		return(HP == 0) ? false : true;
+	}*/
+
 	RECT& GetRect() { return rect; }
 
 private:
 	IMAGE& img;
 	RECT rect;
+
+	//unsigned int HP;
 
 };
 
@@ -174,9 +185,13 @@ class Enemy
 {
 
 public:
-	Enemy(IMAGE& img,int x)
-		:img(img)
+	Enemy(IMAGE& img,int x,IMAGE *& boom)
+		:img(img),isdie(false),boomnum(0)
 	{
+		selfboom[0] = boom[0];
+		selfboom[1] = boom[1];
+		selfboom[2] = boom[2];
+
 		rect.left = x;
 		rect.top = -img.getheight();
 		rect.right =rect.left+img.getwidth();
@@ -184,21 +199,44 @@ public:
 	}
 	bool show()
 	{
+
+		if (isdie)
+		{
+			if (boomnum == 3)
+			{
+				return false;
+			}
+			putimage(rect.left, rect.top, selfboom+boomnum);
+			boomnum++;
+			
+			return true;
+		}
+
 		if (rect.top >= sheight)
 		{
 			return false;
 		}
-		rect.top += 6;
-		rect.bottom += 6;
+		rect.top += 4;
+		rect.bottom += 4;
 		putimage(rect.left, rect.top, &img);
 
 		return true;
 	}
+
+	void Isdie()
+	{
+		isdie = true; 
+	}
+
 	RECT& GetRect() { return rect; }
 
 private:
 	IMAGE& img;
 	RECT rect; 
+	IMAGE selfboom[3];
+
+	bool isdie;
+	int boomnum;
 };
 
 class Bullet
@@ -219,22 +257,48 @@ public:
 			return false;
 		}
 
-		rect.top -= 20;
-		rect.bottom -= 20;
+		rect.top -= 30;
+		rect.bottom -= 30;
 		putimage(rect.left, rect.top, &img);
 
 		return true;
 	}
 	RECT& GetRect() { return rect; }
-private:
+protected:
 	IMAGE& img;
 	RECT rect;
 };
 
-//释放敌机，并且防止敌机重合
-bool AddEnemy(vector<Enemy*> &es,IMAGE &enemyimg)
+class EBullet:public Bullet
 {
-	Enemy* e = new Enemy(enemyimg, abs(rand()) % (swidth - enemyimg.getwidth()));
+public:
+	EBullet(IMAGE& img, RECT pr)
+		:Bullet(img, pr)
+	{
+		rect.left = pr.left + (pr.right - pr.left) / 2 - img.getwidth() / 2;
+		rect.right = rect.left + img.getwidth();
+		rect.top = pr.bottom;
+		rect.bottom = rect.top + img.getheight();
+	}
+	bool show()
+	{
+		if (rect.top >= sheight)
+		{
+			return false;
+		}
+
+		rect.top += 8;
+		rect.bottom += 8;
+		putimage(rect.left, rect.top, &img);
+
+		return true;
+	}
+};
+
+//释放敌机，并且防止敌机重合
+bool AddEnemy(vector<Enemy*> &es,IMAGE &enemyimg,IMAGE* boom)
+{
+	Enemy* e = new Enemy(enemyimg, abs(rand()) % (swidth - enemyimg.getwidth()),boom);
 	for (auto& i: es)
 	{
 		if (RectHit(i->GetRect(), e->GetRect()))//如果敌机重合不添加
@@ -255,6 +319,7 @@ bool Play()
 	bool is_play=true;
 
 	IMAGE heroimg, enemyimg, bkimg, bulletimg;
+	IMAGE eboom[3];
 
 	//加载图片
 	loadimage(&heroimg,_T("D:\\picture_temp\\herop.jpg"),80,90);
@@ -262,26 +327,42 @@ bool Play()
 	loadimage(&bkimg, _T("D:\\picture_temp\\bk.png"),swidth,sheight*2);
 	loadimage(&bulletimg, _T("D:\\picture_temp\\butt.png"),8,10);
 
+	loadimage(&eboom[0], _T("D:\\picture_temp\\boom1.jpg"), 30, 40);
+	loadimage(&eboom[1], _T("D:\\picture_temp\\boom2.jpg"), 40, 50);
+	loadimage(&eboom[2], _T("D:\\picture_temp\\boom3.jpg"), 50, 60);
+
 	BK bk = BK(bkimg);
 	Hero hp = Hero(heroimg);
 
 	vector<Enemy*> es;
 	vector<Bullet*> bs;
+	vector<EBullet*> ebs;
 	int bsing=0;
+
+	clock_t hurtlast = clock();
+
 	unsigned long long killcount = 0;
 
-	for (int i = 0; i < 5; i++)//释放敌机
+	for (int i = 0; i < 3; i++)//释放敌机
 	{
-		AddEnemy(es, enemyimg);
+		AddEnemy(es, enemyimg,eboom);
 	}
 
 	while (is_play)
 	{
 		bsing++;
-		if (bsing == 10)//调节子弹密度
+		
+		if (bsing %5== 0)//调节己方子弹密度
+		{
+			bs.push_back(new Bullet(bulletimg, hp.GetRect())); 
+		}
+		if (bsing == 60)//调节敌机子弹密度
 		{
 			bsing = 0;
-			bs.push_back(new Bullet(bulletimg,hp.GetRect()));
+			for (auto& i : es)
+			{
+				ebs.push_back(new EBullet(bulletimg, i->GetRect()));
+			}
 		}
 
 		BeginBatchDraw();
@@ -313,12 +394,7 @@ bool Play()
 		}
 		hp.show();
 
-		for (auto i : bs)//显示子弹
-		{
-			i->show();
-		}
-
-		auto bsit = bs.begin();
+		auto bsit = bs.begin();//显示己方子弹
 		while (bsit != bs.end())
 		{
 			if (!(*bsit)->show())
@@ -331,6 +407,30 @@ bool Play()
 			}
 		}
 
+		auto ebsit = ebs.begin();//显示敌机子弹
+		while (ebsit != ebs.end())
+		{
+			if (RectHit((*ebsit)->GetRect(), hp.GetRect()))
+			{
+				is_play = false;
+				/*if (clock() - hurtlast >= hurttime)
+				{
+					is_play = hp.hurt();
+					hurtlast = clock();
+				}*/
+				break;
+			}
+			if (!(*ebsit)->show())
+			{
+				ebsit = ebs.erase(ebsit);
+			}
+			
+			else
+			{
+				ebsit++;
+			}
+		}
+		 
 		auto it = es.begin();
 		while (it!=es.end())//遍历敌机图片
 		{
@@ -344,9 +444,7 @@ bool Play()
 			{
 				if (RectHit((*bit)->GetRect(), (*it)->GetRect()))//如果子弹和敌机相碰，则子弹和敌机都消失
 				{
-					delete(*it);
-					es.erase(it);
-					it = es.begin();
+					(*it)->Isdie();
 					delete(*bit);
 					bs.erase(bit);
 					killcount++;
@@ -369,9 +467,9 @@ bool Play()
 			
 		}
 
-		for (int i = 0; i < 5 - es.size(); i++)//填充被击败的敌机
+		for (int i = 0; i < 3 - es.size(); i++)//填充被击败的敌机
 		{
-			AddEnemy(es, enemyimg);
+			AddEnemy(es, enemyimg,eboom);
 		}
 
 		EndBatchDraw();
