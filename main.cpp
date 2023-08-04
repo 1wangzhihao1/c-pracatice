@@ -218,9 +218,12 @@ public:
 		{
 			return false;
 		}
+
 		rect.top -= 20;
 		rect.bottom -= 20;
 		putimage(rect.left, rect.top, &img);
+
+		return true;
 	}
 	RECT& GetRect() { return rect; }
 private:
@@ -313,6 +316,19 @@ bool Play()
 		for (auto i : bs)//ÏÔÊ¾×Óµ¯
 		{
 			i->show();
+		}
+
+		auto bsit = bs.begin();
+		while (bsit != bs.end())
+		{
+			if (!(*bsit)->show())
+			{
+				bsit = bs.erase(bsit);
+			}
+			else
+			{
+				bsit++; 
+			}
 		}
 
 		auto it = es.begin();
